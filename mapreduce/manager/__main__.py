@@ -6,6 +6,7 @@ import json
 import time
 import click
 import mapreduce.utils
+from pathlib import Path
 
 
 # Configure logging
@@ -43,6 +44,11 @@ class Manager:
 @click.option("--hb-port", "hb_port", default=5999)
 def main(host, port, hb_port):
     """Run Manager."""
+    tempDir = Path().resolve()
+    tempDir = tempDir / "tmp"
+    jobFiles = tempDir.glob("job-*")
+    for job in jobFiles:
+        os.remove(job)
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
         f"Manager:{port} [%(levelname)s] %(message)s"

@@ -1,0 +1,63 @@
+#!/bin/bash
+#
+# mapreduce
+#
+set -Eeuo pipefail
+#set -x
+case $1 in
+    "start")
+        if pgrep -af mapreduce-manager; then 
+            exit 1 
+        fi
+        if pgrep -af mapreduce-worker; then
+            exit 1 
+        fi
+
+        mapreduce-manager --host localhost --port 6000 --hb-port 5999 &
+        sleep 2
+        mapreduce-worker --host localhost --port 6001 --manager-host localhost --manager-port 6000 --manager-hb-port 5999 &
+        mapreduce-worker --host localhost --port 6002 --manager-host localhost --manager-port 6000 --manager-hb-port 5999 &
+        ;;
+    "stop")
+        # Detect GNU vs BSD netcat. We need netcat to close the connection after
+        # sending a message, which requires different options.
+        set +o pipefail  # Avoid erroneous failures due to grep returning non-zero
+        if nc -h 2>&1 | grep -q "\-c"; then
+            NC="nc -c"
+        elif nc -h 2>&1 | grep -q "\-N"; then
+            NC="nc -N"
+        elif nc -h 2>&1 | grep -q "\-C"; then
+            NC="nc -C"
+        else
+            echo "Error detecting netcat version."
+            exit 1
+        fi
+        set -o pipefail
+
+        echo '{"message_type": "shutdown"}' | $NC localhost 6000 || true
+        sleep 2  # give the manager time to receive signal and send to workers
+        if pgrep -f mapreduce-manager &> /dev/null; then
+            echo "killing mapreduce manager ..."
+            pkill -f mapreduce-manager || true
+        fi
+        if pgrep -f mapreduce-worker &> /dev/null; then
+            echo "killing mapreduce worker ..."
+            pkill -f mapreduce-worker || true
+        fi
+        ;;
+    "status")
+        if pgrep -af mapreduce-manager; then 
+            if pgrep -af mapreduce-worker; then    
+                exit 0 
+            fi
+        fi
+        exit 1 
+        ;;
+    "restart")
+    ./bin/mapreduce stop
+    ./bin/mapreduce start
+    ;;
+    *)
+    exit 1
+    ;;
+esac

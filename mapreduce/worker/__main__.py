@@ -25,14 +25,19 @@ class Worker:
             "manager_host=%s manager_port=%s manager_hb_port=%s",
             manager_host, manager_port, manager_hb_port,
         )
-
-        # This is a fake message to demonstrate pretty printing with logging
-        message_dict = {
-            "message_type": "register_ack",
-            "worker_host": "localhost",
-            "worker_port": 6001,
+        sock = mapreduce.utils.makeSocket(port)
+        
+        # send register message to manager
+        register_mess = {
+            "message_type": "register",
+            "worker_host": port,
+            "worker_port": host,
         }
-        LOGGER.debug("TCP recv\n%s", json.dumps(message_dict, indent=2))
+        mapreduce.utils.sendMessage(manager_port, register_mess)
+        LOGGER.debug("TCP recv\n%s", json.dumps(register_mess, indent=2))
+
+        # when we recieve register_ack message, create a new thread to send heartbeat messages to manager
+        
 
         # TODO: you should remove this. This is just so the program doesn't
         # exit immediately!

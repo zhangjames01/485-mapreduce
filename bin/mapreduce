@@ -34,6 +34,7 @@ case $1 in
         fi
         set -o pipefail
 
+        echo "stopping mapreduce..."
         echo '{"message_type": "shutdown"}' | $NC localhost 6000 || true
         sleep 2  # give the manager time to receive signal and send to workers
         if pgrep -f mapreduce-manager &> /dev/null; then

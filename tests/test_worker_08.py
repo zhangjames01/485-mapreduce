@@ -144,6 +144,9 @@ def test_map_reduce(mocker):
     except SystemExit as error:
         assert error.code == 0
 
+
+        
+
     # Verify messages sent by the Worker
     all_messages = utils.get_messages(mock_socket)
     messages = utils.filter_not_heartbeat_messages(all_messages)

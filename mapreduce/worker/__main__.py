@@ -10,6 +10,8 @@ import mapreduce.utils
 import threading
 import hashlib
 import subprocess
+import heapq
+import contextlib
 
 # Configure logging
 LOGGER = logging.getLogger(__name__)
@@ -104,19 +106,56 @@ class Worker:
                                         "message_type": "finished",
                                         "task_id": message_dict['task_id'],
                                         "output_paths" : output_paths,
-                                        "worker_host": message_dict['worker_host'],
-                                        "worker_port": message_dict['worker_port']
+                                        "worker_host": host,
+                                        "worker_port": port
                                         }
                     mapreduce.utils.sendMessage(manager_port, manager_host, message_finished)
-            # Add line to correct partition output file
+                if message_dict['message_type'] == "new_reduce_task":
+                    output_paths = []
+                    inFiles = []
+                    i = 0
+                    for input_path in message_dict['input_paths']:
+                        data = open(input_path).readlines()
+                        data.sort()
+                        with open(message_dict['output_directory'] +"/file" + str(i), 'w') as outFile:
+                            for item in data:
+                                outFile.write("%s\n" % item)
+                            inFiles.append(outFile.name)
+                        i += 1
+                    with contextlib.ExitStack() as stack:
+                        files = [stack.enter_context(open(fn)) for fn in inFiles]
+                        with open(message_dict['output_directory'] + "combinedFile", 'w') as f:
+                            f.writelines(heapq.merge(*files))
+
+                    executable = message_dict['executable']
+                    input_path = message_dict['output_directory'] + "combinedFile"
+                    output_path = message_dict['output_directory'] + "/part-{0:05}".format(message_dict['task_id'])
+                    with open(input_path) as infile, open(output_path, 'w') as outfile:
+                        with subprocess.Popen(
+                            [executable],
+                            universal_newlines=True,
+                            stdin=subprocess.PIPE,
+                            stdout=outfile,
+                        ) as reduce_process:
+                            # Pipe input to reduce_process
+                            for line in infile:
+                                reduce_process.stdin.write(line)
+                                # Add line to correct partition output file
+                        output_paths.append(outfile.name)
+                    message_finished_red = {
+                                        "message_type": "finished",
+                                        "task_id": message_dict['task_id'],
+                                        "output_paths" : output_paths,
+                                        "worker_host": host,
+                                        "worker_port": port
+                                        }
+                    mapreduce.utils.sendMessage(manager_port, manager_host, message_finished_red)
                 if message_dict['message_type'] == "shutdown":
                     signals["shutdown"] = True
                     LOGGER.debug("%d", threading.active_count())
                 # send register message to 
                 time.sleep(.1)
-        
-               
-                
+                                        
 
 def sendHeartBeat(signals, manager_host, manager_hb_port, host, port, timer=2):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:

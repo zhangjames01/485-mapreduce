@@ -8,6 +8,8 @@ import click
 import socket
 import mapreduce.utils
 import threading
+import hashlib
+import subprocess
 
 # Configure logging
 LOGGER = logging.getLogger(__name__)
@@ -70,12 +72,43 @@ class Worker:
                     message_dict = json.loads(message_str)
                 except json.JSONDecodeError:
                     continue
-                print(message_dict)
                 if message_dict['message_type'] == "register_ack":
                     LOGGER.debug("recieved register_ack")
                     newthread = threading.Thread(target=sendHeartBeat, args=(signals, manager_host, manager_hb_port, host, port))
                     threads.append(newthread)
                     newthread.start()
+                if message_dict['message_type'] == "new_map_task":
+                    output_paths = []
+
+                    for input_path in message_dict['input_paths']:
+                        with open(input_path) as infile:
+                            with subprocess.Popen(
+                                [message_dict['executable']],
+                                stdin=infile,
+                                stdout=subprocess.PIPE,
+                                universal_newlines=True,
+                            ) as map_process:
+                                for line in map_process.stdout:
+                                    #TODO: add the line to the correct partition file
+                                    key = line.split("\t")[0]
+                                    hexdigest = hashlib.md5(key.encode("utf-8")).hexdigest()
+                                    keyhash = int(hexdigest, base=16)
+                                    partition = keyhash % message_dict['num_partitions']
+                                    output_file = message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(partition)
+                                    if output_file not in output_paths:
+                                        output_paths.append(output_file)
+                                    f = open(output_file,"a")
+                                    if (len(line)) != 1:
+                                        f.write(line)
+                    message_finished = {
+                                        "message_type": "finished",
+                                        "task_id": message_dict['task_id'],
+                                        "output_paths" : output_paths,
+                                        "worker_host": message_dict['worker_host'],
+                                        "worker_port": message_dict['worker_port']
+                                        }
+                    mapreduce.utils.sendMessage(manager_port, manager_host, message_finished)
+            # Add line to correct partition output file
                 if message_dict['message_type'] == "shutdown":
                     signals["shutdown"] = True
                     LOGGER.debug("%d", threading.active_count())
@@ -94,7 +127,7 @@ def sendHeartBeat(signals, manager_host, manager_hb_port, host, port, timer=2):
                      "worker_port": port
                     }
         while not signals["shutdown"]:
-            LOGGER.debug("sending heartbeat")
+            #LOGGER.debug("sending heartbeat")
             message = json.dumps(hb_message)
             sock.sendall(message.encode('utf-8'))
             time.sleep(timer)

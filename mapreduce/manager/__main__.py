@@ -25,8 +25,12 @@ class Manager:
         threads = []
         workers = []
         jobs = []
+        map_outputs = []
+        num_tasks = 0
+        completed_tasks = 0
         job_counter = 0
         working = False
+        stage = ""
         signals = {"shutdown": False}
         tempDir = Path().resolve()
         tempDir = tempDir / "tmp"
@@ -86,7 +90,7 @@ class Manager:
                 if message_dict['message_type'] == "register":
                     tempWorker = {'host' : message_dict['worker_host'],
                                   'port' : message_dict['worker_port'],
-                                  'state' : 'ready',
+                                  'status' : 'ready',
                                   'missedHB' : 0
                                  }
                     workers.append(tempWorker)
@@ -116,6 +120,24 @@ class Manager:
                         if worker['status'] == "ready":
                             if not working:
                                 working = True
+                                map_outputs = []
+                                num_tasks = 0
+                                jobThread = threading.Thread(target=doJob,args=(jobs, workers, signals, port))
+                                threads.append(jobThread)
+                                jobThread.start()
+                if message_dict['message_type'] == "finished":
+                    if stage == "mapping":
+                        for worker in workers:
+                            if worker['port'] == message_dict['worker_port'] and worker['host'] == message_dict['worker_host']:
+                                worker['status'] = "ready"
+                        map_outputs.appends(message_dict['output_paths'])
+                        completed_tasks += 1
+                        if completed_tasks == num_tasks:
+                            LOGGER.info("Manager:%s end map stage", port)
+                            stage = "reducing"
+                            num_tasks = 0
+                            completed_tasks = 0
+                            #reduceThread = threading.thread
                 if message_dict['message_type'] == "shutdown":
                     for worker in workers:
                         mapreduce.utils.sendMessage(worker['port'], worker['host'], {"message_type" : "shutdown"})
@@ -126,6 +148,38 @@ class Manager:
 
         # TODO: exit all threads before moving on
 
+def doJob(jobs, workers, signals, port):
+    # stage = "mapping"
+    currJob = jobs[0]
+    currJob['input_directory'].sort()
+    partitionedFiles = [[{}]]
+    i = 0
+    for task in currJob['input_directory']:
+        partitionedFiles[i].append({'task' : task,
+                                    'taskid': i})
+        i += 1
+        i % currJob['num_mappers']
+    num_tasks = len(partitionedFiles)
+    while not signals['shutdown'] and len(partitionedFiles > 0):
+        for i in range(len(partitionedFiles)):
+            for worker in workers:
+                if worker['status'] == "ready":
+                    message_dict = {
+                                    "message_type": "new_map_task",
+                                    "task_id": partitionedFiles[i]['taskid'],
+                                    "input_paths": partitionedFiles[i]['task'],
+                                    "executable": currJob['mapper_executable'],
+                                    "output_directory": currJob['output_directory'],
+                                    "num_partitions": currJob['num_reducers'],
+                                    "worker_host": worker['host'],
+                                    "worker_port": worker['port']
+                                    }
+                    mapreduce.utils.sendMessage(worker['port'], worker['host'], message_dict)
+                    worker['status'] = "busy"
+                    partitionedFiles.pop(i)
+        time.sleep(.1)
+    LOGGER.info("Manager:%s begin map stage", port)
+    stage = "mapping"
 def heartbeatListener(signals, host, hb_port, workers):
        # Create an INET, DGRAM socket, this is UDP
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:

@@ -80,28 +80,33 @@ class Worker:
                     threads.append(newthread)
                     newthread.start()
                 if message_dict['message_type'] == "new_map_task":
+                    print("recieved map task")
                     output_paths = []
-
-                    for input_path in message_dict['input_paths']:
-                        with open(input_path) as infile:
-                            with subprocess.Popen(
-                                [message_dict['executable']],
-                                stdin=infile,
-                                stdout=subprocess.PIPE,
-                                universal_newlines=True,
-                            ) as map_process:
-                                for line in map_process.stdout:
-                                    #TODO: add the line to the correct partition file
-                                    key = line.split("\t")[0]
-                                    hexdigest = hashlib.md5(key.encode("utf-8")).hexdigest()
-                                    keyhash = int(hexdigest, base=16)
-                                    partition = keyhash % message_dict['num_partitions']
-                                    output_file = message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(partition)
-                                    if output_file not in output_paths:
-                                        output_paths.append(output_file)
-                                    with open(output_file,"a") as f:
-                                        f.write(line)
-                    output_paths.sort()
+                    for i in range(message_dict['num_partitions']):
+                        output_paths.append(message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(i))
+                    with contextlib.ExitStack() as stack:
+                        files = [stack.enter_context(open(fn, 'a')) for fn in output_paths]  
+                        for input_path in message_dict['input_paths']:
+                            with open(input_path) as infile:
+                                with subprocess.Popen(
+                                    [message_dict['executable']],
+                                    stdin=infile,
+                                    stdout=subprocess.PIPE,
+                                    universal_newlines=True,
+                                ) as map_process:
+                                    for line in map_process.stdout:
+                                        #TODO: add the line to the correct partition file
+                                    
+                                        key = line.split("\t")[0]
+                                        hexdigest = hashlib.md5(key.encode("utf-8")).hexdigest()
+                                        keyhash = int(hexdigest, base=16)
+                                        partition = keyhash % message_dict['num_partitions']
+                                        output_file = message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(partition)
+                                        for file in files:
+                                            #LOGGER.debug("file name: %s  output_file: %s", file.name, output_file)
+                                            if file.name == output_file:
+                                                LOGGER.debug("write %s to %s", line, output_file)
+                                                file.write(line)
                     message_finished = {
                                         "message_type": "finished",
                                         "task_id": message_dict['task_id'],
@@ -113,29 +118,17 @@ class Worker:
                 if message_dict['message_type'] == "new_reduce_task":
                     output_paths = []
                     inFiles = []
-                    i = 0
                     for input_path in message_dict['input_paths']:
-                        with open(input_path) as inputFile:
+                        with open(input_path, 'r') as inputFile:
                             data = inputFile.readlines()
                             data.sort()
-                            with open(message_dict['output_directory'] +"/file" + str(i), 'w') as outFile:
-                                for item in data:
-                                    LOGGER.debug("%s", item)
-                                    outFile.write("%s" % item)
-                                inFiles.append(outFile.name)
-                            i += 1
-                    with contextlib.ExitStack() as stack:
-                        files = [stack.enter_context(open(fn)) for fn in inFiles]
-                        with open(message_dict['output_directory'] + "combinedFile", 'w') as f:
-                            f.writelines(heapq.merge(*files))
+                        with open(input_path, 'w') as outFile:
+                            outFile.writelines(data)
+                            inFiles.append(input_path)
 
                     executable = message_dict['executable']
-                    input_path = message_dict['output_directory'] + "combinedFile"
-                    for line in open(input_path).readlines():
-                        #LOGGER.debug("%s", line)
-                        pass
                     output_path = message_dict['output_directory'] + "/part-{0:05}".format(message_dict['task_id'])
-                    with open(input_path) as infile, open(output_path, 'w') as outfile:
+                    with open(output_path, 'w') as outfile:
                         with subprocess.Popen(
                             [executable],
                             universal_newlines=True,
@@ -143,8 +136,10 @@ class Worker:
                             stdout=outfile,
                         ) as reduce_process:
                             # Pipe input to reduce_process
-                            for line in infile:
-                                reduce_process.stdin.write(line)
+                            with contextlib.ExitStack() as stack:
+                                files = [stack.enter_context(open(fn)) for fn in inFiles]           
+                                for line in (heapq.merge(*files)):
+                                    reduce_process.stdin.write(line)
                                 # Add line to correct partition output file
                         output_paths.append(outfile.name)
                     message_finished_red = {
@@ -157,7 +152,6 @@ class Worker:
                     mapreduce.utils.sendMessage(manager_port, manager_host, message_finished_red)
                 if message_dict['message_type'] == "shutdown":
                     signals["shutdown"] = True
-                    LOGGER.debug("%d", threading.active_count())
                 # send register message to 
                 time.sleep(.1)
                                         
@@ -171,7 +165,7 @@ def sendHeartBeat(signals, manager_host, manager_hb_port, host, port, timer=2):
                      "worker_port": port
                     }
         while not signals["shutdown"]:
-            #LOGGER.debug("sending heartbeat")
+            LOGGER.debug("sending heartbeat")
             message = json.dumps(hb_message)
             sock.sendall(message.encode('utf-8'))
             time.sleep(timer)

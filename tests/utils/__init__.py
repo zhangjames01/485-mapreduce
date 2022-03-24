@@ -115,7 +115,7 @@ def is_map_message(message):
         "message_type" in message and
         message["message_type"] == "new_map_task" and
 
-        "output_directory" in message and
+       "output_directory" in message and
         "intermediate" in message["output_directory"]
     )
 

@@ -2,6 +2,7 @@ from asyncio.log import logger
 import socket
 import json
 import logging
+import pathlib
 
 """Utils file.
 
@@ -17,8 +18,9 @@ def makeSocket(sock, host, port):
         sock.listen()
 
 # TCP send message
-def sendMessage(port, host, dict):
-    LOGGER.debug("sent message to port " + str(port) + "msg: " + str(dict))
+def sendMessage(port, host, mess):
+    print("sending a message: " + str(mess))
+    LOGGER.debug("sent message to port " + str(port) + "msg: " + str(mess))
     # create an INET, STREAMing socket, this is TCP
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
@@ -26,5 +28,19 @@ def sendMessage(port, host, dict):
         sock.connect((host, port))
 
         # send a message
-        message = json.dumps(dict)
+        message = json.dumps(mess)
         sock.sendall(message.encode('utf-8'))
+
+class PathJSONEncoder(json.JSONEncoder):
+    """Extended the Python JSON encoder to encode Pathlib objects.
+    Docs: https://docs.python.org/3/library/json.html
+    Usage:
+    >>> json.dumps({
+            "executable": TESTDATA_DIR/"exec/wc_map.sh",
+        }, cls=PathJSONEncoder)
+    """
+    def default(self, o):
+        """Override base class method to include Path object serialization."""
+        if isinstance(o, pathlib.Path):
+            return str(o)
+        return super().default(o)

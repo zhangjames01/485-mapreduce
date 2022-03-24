@@ -99,9 +99,9 @@ class Worker:
                                     output_file = message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(partition)
                                     if output_file not in output_paths:
                                         output_paths.append(output_file)
-                                    f = open(output_file,"a")
-                                    if (len(line)) != 1:
+                                    with open(output_file,"a") as f:
                                         f.write(line)
+                    output_paths.sort()
                     message_finished = {
                                         "message_type": "finished",
                                         "task_id": message_dict['task_id'],
@@ -115,13 +115,15 @@ class Worker:
                     inFiles = []
                     i = 0
                     for input_path in message_dict['input_paths']:
-                        data = open(input_path).readlines()
-                        data.sort()
-                        with open(message_dict['output_directory'] +"/file" + str(i), 'w') as outFile:
-                            for item in data:
-                                outFile.write("%s\n" % item)
-                            inFiles.append(outFile.name)
-                        i += 1
+                        with open(input_path) as inputFile:
+                            data = inputFile.readlines()
+                            data.sort()
+                            with open(message_dict['output_directory'] +"/file" + str(i), 'w') as outFile:
+                                for item in data:
+                                    LOGGER.debug("%s", item)
+                                    outFile.write("%s" % item)
+                                inFiles.append(outFile.name)
+                            i += 1
                     with contextlib.ExitStack() as stack:
                         files = [stack.enter_context(open(fn)) for fn in inFiles]
                         with open(message_dict['output_directory'] + "combinedFile", 'w') as f:
@@ -129,6 +131,9 @@ class Worker:
 
                     executable = message_dict['executable']
                     input_path = message_dict['output_directory'] + "combinedFile"
+                    for line in open(input_path).readlines():
+                        #LOGGER.debug("%s", line)
+                        pass
                     output_path = message_dict['output_directory'] + "/part-{0:05}".format(message_dict['task_id'])
                     with open(input_path) as infile, open(output_path, 'w') as outfile:
                         with subprocess.Popen(

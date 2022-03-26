@@ -10,11 +10,10 @@ from pathlib import Path
 import threading
 import socket
 import json
-
+import shutil
 
 # Configure logging
 LOGGER = logging.getLogger(__name__)
-
 
 class Manager:
     """Represent a MapReduce framework Manager node."""
@@ -33,18 +32,19 @@ class Manager:
         working = False
         stage = ""
         signals = {"shutdown": False}
-        tempDir = Path().resolve()
-        tempDir = tempDir / "tmp"
-        start_time = time.time()
+        tempDir = Path().resolve() / "tmp"
         # delete any old mapreduce job folders in temp
         jobFiles = tempDir.glob("job-*")
         for job in jobFiles:
-            os.remove(job)
+            shutil.rmtree(job)
 
         #create a new thread, which will listen to udp heartbeat messages from the workers
-        manag_thread = threading.Thread(target=heartbeatListener, args=(signals, host, hb_port, workers, stage))
+        manag_thread = threading.Thread(target=heartbeatListener, args=(signals, host, hb_port, workers))
         threads.append(manag_thread)
         manag_thread.start()
+        check_thread = threading.Thread(target=check_heartbeats, args=(signals, workers))
+        threads.append(check_thread)
+        check_thread.start()
         #faut_tol = threading.Thread(target=worker, args=())
         LOGGER.info(
             "Starting manager host=%s port=%s hb_port=%s pwd=%s",
@@ -87,7 +87,6 @@ class Manager:
                 except json.JSONDecodeError:
                     continue
 
-                # This is a fake message to demonstrate pretty printing with logging
                 if message_dict['message_type'] == "register":
                     tempWorker = {'host' : message_dict['worker_host'],
                                   'port' : message_dict['worker_port'],
@@ -100,7 +99,6 @@ class Manager:
                         "worker_host": tempWorker['host'],
                         "worker_port": tempWorker['port'],
                     }
-                    LOGGER.debug("HI")
                     mapreduce.utils.sendMessage(tempWorker['port'], tempWorker['host'], register_mess)
                     # if len(workers) == 1:
                     #     if not working:
@@ -166,12 +164,6 @@ class Manager:
                             working = False
                             jobs.pop(0)
 
-                if message_dict['message_type'] == "shutdown":
-                    for worker in workers:
-                        mapreduce.utils.sendMessage(worker['port'], worker['host'], {"message_type" : "shutdown"})
-                    signals["shutdown"] = True
-                LOGGER.debug("TCP recv\n%s", json.dumps(message_dict, indent=2))
-                
                 if len(jobs) > 0:
                     for worker in workers:
                         if worker['status'] == "ready":
@@ -186,6 +178,12 @@ class Manager:
                                 jobThread.start()
                                 stage = "mapping"
                                 break
+                if message_dict['message_type'] == "shutdown":
+                    for worker in workers:
+                        if worker['status'] != "dead":
+                            mapreduce.utils.sendMessage(worker['port'], worker['host'], {"message_type" : "shutdown"})
+                    signals["shutdown"] = True
+                LOGGER.debug("TCP recv\n%s", json.dumps(message_dict, indent=2))
                 time.sleep(.1)
 
         # TODO: exit all threads before moving on
@@ -286,12 +284,29 @@ def send_replacementTask(signals, message, workers):
     while not signals['shutdown']:
         for worker in workers:
             if worker['status'] == "ready":
+                message['worker_port'] = worker['port']
                 worker['message'] = message
                 mapreduce.utils.sendMessage(worker['port'], worker['host'], message)
                 worker['status'] = "busy"
+                return
         time.sleep(.1)
             
-def heartbeatListener(signals, host, hb_port, workers, stage):
+def check_heartbeats(signals, workers):
+    while not signals["shutdown"]:
+        for worker in workers:
+            if worker['missedHB'] >= 5:
+                if worker['status'] != "dead":
+                    LOGGER.debug("worker: " + str(worker['port']) + "is dead")
+                    if worker['status'] == "busy":
+                        worker['status'] = "dead"
+                        newTaskThread = threading.Thread(target=send_replacementTask, args=(signals,worker['message'],workers))
+                        newTaskThread.start()
+                    worker['status'] = "dead"
+
+            worker['missedHB'] += 1
+        time.sleep(2)
+
+def heartbeatListener(signals, host, hb_port, workers):
        # Create an INET, DGRAM socket, this is UDP
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         # Bind the UDP socket to the server 
@@ -300,18 +315,6 @@ def heartbeatListener(signals, host, hb_port, workers, stage):
         sock.settimeout(1)
         # No sock.listen() since UDP doesn't establish connections like TCP
         # Receive incoming UDP messages
-        while not signals["shutdown"]:
-            for worker in workers:
-                if worker['missedHB'] >= 5:
-                    if worker['status'] != "dead":
-                        print("dead")
-                        if worker['status'] == "busy":
-                            newTaskThread = threading.Thread(target=send_replacementTask, args=(signals,worker['message'],workers))
-                            newTaskThread.start()
-                        worker['status'] = "dead"
-
-                worker['missedHB'] += 1
-            time.sleep(2)
         while not signals["shutdown"]:
             try:
                 message_bytes = sock.recv(4096)
@@ -324,7 +327,6 @@ def heartbeatListener(signals, host, hb_port, workers, stage):
                 LOGGER.debug("recieving heartbeat")
                 for worker in workers:
                     if worker['port'] == message_dict['worker_port']:
-                        print("alive!")
                         worker['missedHB'] = 0
 
     

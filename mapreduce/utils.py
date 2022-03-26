@@ -19,7 +19,6 @@ def makeSocket(sock, host, port):
 
 # TCP send message
 def sendMessage(port, host, mess):
-    print("sending a message: " + str(mess))
     LOGGER.debug("sent message to port " + str(port) + "msg: " + str(mess))
     # create an INET, STREAMing socket, this is TCP
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

@@ -12,6 +12,7 @@ import hashlib
 import subprocess
 import heapq
 import contextlib
+import pathlib
 
 # Configure logging
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class Worker:
             }
             mapreduce.utils.sendMessage(manager_port, manager_host, register_mess)
             LOGGER.debug("TCP recv\n%s", json.dumps(register_mess, indent=2))
+            sock.settimeout(1)
             while not signals["shutdown"]:
             # Wait for a connection for 1s.  The socket library avoids consuming
             # CPU while waiting for a connection.
@@ -50,8 +52,6 @@ class Worker:
                     clientsocket, address = sock.accept()
                 except socket.timeout:
                     continue
-                print("Connection from", address[0])
-
                 # Receive data, one chunk at a time.  If recv() times out before we can
                 # read a chunk, then go back to the top of the loop and try again.
                 # When the client closes the connection, recv() returns empty data,
@@ -127,8 +127,9 @@ class Worker:
                             inFiles.append(input_path)
 
                     executable = message_dict['executable']
+                    pathlib.Path(message_dict['output_directory']).mkdir(parents=True, exist_ok=True)
                     output_path = message_dict['output_directory'] + "/part-{0:05}".format(message_dict['task_id'])
-                    with open(output_path, 'w') as outfile:
+                    with open(output_path, 'w+') as outfile:
                         with subprocess.Popen(
                             [executable],
                             universal_newlines=True,
@@ -153,7 +154,6 @@ class Worker:
                 if message_dict['message_type'] == "shutdown":
                     signals["shutdown"] = True
                 # send register message to 
-                time.sleep(.1)
                                         
 
 def sendHeartBeat(signals, manager_host, manager_hb_port, host, port, timer=2):

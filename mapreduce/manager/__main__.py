@@ -15,6 +15,7 @@ import shutil
 # Configure logging
 LOGGER = logging.getLogger(__name__)
 
+
 class Manager:
     """Represent a MapReduce framework Manager node."""
 
@@ -39,10 +40,12 @@ class Manager:
             shutil.rmtree(job)
 
         #create a new thread, which will listen to udp heartbeat messages from the workers
-        manag_thread = threading.Thread(target=heartbeatListener, args=(signals, host, hb_port, workers))
+        manag_thread = threading.Thread(
+            target=heartbeatListener, args=(signals, host, hb_port, workers))
         threads.append(manag_thread)
         manag_thread.start()
-        check_thread = threading.Thread(target=check_heartbeats, args=(signals, workers))
+        check_thread = threading.Thread(
+            target=check_heartbeats, args=(signals, workers))
         threads.append(check_thread)
         check_thread.start()
         #faut_tol = threading.Thread(target=worker, args=())
@@ -56,8 +59,8 @@ class Manager:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             mapreduce.utils.makeSocket(sock, host, port)
             while not signals["shutdown"]:
-            # Wait for a connection for 1s.  The socket library avoids consuming
-            # CPU while waiting for a connection.
+                # Wait for a connection for 1s.  The socket library avoids consuming
+                # CPU while waiting for a connection.
                 try:
                     clientsocket, address = sock.accept()
                 except socket.timeout:
@@ -88,37 +91,39 @@ class Manager:
                     continue
 
                 if message_dict['message_type'] == "register":
-                    tempWorker = {'host' : message_dict['worker_host'],
-                                  'port' : message_dict['worker_port'],
-                                  'status' : 'ready',
-                                  'missedHB' : 0
-                                 }
+                    tempWorker = {'host': message_dict['worker_host'],
+                                  'port': message_dict['worker_port'],
+                                  'status': 'ready',
+                                  'missedHB': 0
+                                  }
                     workers.append(tempWorker)
                     register_mess = {
                         "message_type": "register_ack",
                         "worker_host": tempWorker['host'],
                         "worker_port": tempWorker['port'],
                     }
-                    mapreduce.utils.sendMessage(tempWorker['port'], tempWorker['host'], register_mess)
+                    mapreduce.utils.sendMessage(
+                        tempWorker['port'], tempWorker['host'], register_mess)
                     # if len(workers) == 1:
                     #     if not working:
                     #         working = True
                 if message_dict['message_type'] == "new_manager_job":
-                   
-                    currJobPath = Path("tmp")/ ("job-"+str(job_counter))/"intermediate"
+
+                    currJobPath = Path("tmp") / \
+                        ("job-"+str(job_counter))/"intermediate"
                     currJobPath.mkdir(parents=True)
                     job_counter += 1
                     currJob = {
-                                "input_directory": message_dict['input_directory'],
-                                "output_directory_map": currJobPath,
-                                "output_directory_reduce": message_dict['output_directory'],
-                                "mapper_executable": message_dict['mapper_executable'],
-                                "reducer_executable": message_dict['reducer_executable'],
-                                "num_mappers" : message_dict['num_mappers'],
-                                "num_reducers" : message_dict['num_reducers'],
-                                }
+                        "input_directory": message_dict['input_directory'],
+                        "output_directory_map": currJobPath,
+                        "output_directory_reduce": message_dict['output_directory'],
+                        "mapper_executable": message_dict['mapper_executable'],
+                        "reducer_executable": message_dict['reducer_executable'],
+                        "num_mappers": message_dict['num_mappers'],
+                        "num_reducers": message_dict['num_reducers'],
+                    }
                     jobs.append(currJob)
-                    
+
                     for worker in workers:
                         if worker['status'] == "ready":
                             if not working:
@@ -127,7 +132,8 @@ class Manager:
                                 reduce_outputs = []
                                 num_tasks = []
                                 #partitionedFiles = doPartition(jobs)
-                                jobThread = threading.Thread(target=doJob,args=(jobs, workers, signals, port, stage, num_tasks))
+                                jobThread = threading.Thread(target=doJob, args=(
+                                    jobs, workers, signals, port, stage, num_tasks))
                                 threads.append(jobThread)
                                 jobThread.start()
                                 stage = "mapping"
@@ -138,16 +144,18 @@ class Manager:
                                 worker['status'] = "ready"
                         for output in message_dict['output_paths']:
                             map_outputs.append(output)
-                        
+
                         completed_tasks += 1
-                        print("tasks needed: " + str(len(num_tasks)) + "tasks done: " + str(completed_tasks))
+                        print("tasks needed: " + str(len(num_tasks)) +
+                              "tasks done: " + str(completed_tasks))
                         if completed_tasks == len(num_tasks):
                             LOGGER.info("Manager:%s end map stage", port)
                             stage = "reducing"
                             num_tasks = []
                             completed_tasks = 0
                             LOGGER.info("Manager:%s begin reduce stage", port)
-                            reduceThread = threading.Thread(target=doReduce, args=(jobs, workers, signals, port, map_outputs, num_tasks))
+                            reduceThread = threading.Thread(target=doReduce, args=(
+                                jobs, workers, signals, port, map_outputs, num_tasks))
                             threads.append(reduceThread)
                             reduceThread.start()
                     elif stage == "reducing":
@@ -173,7 +181,8 @@ class Manager:
                                 reduce_outputs = []
                                 num_tasks = []
                                 #partitionedFiles = doPartition(jobs)
-                                jobThread = threading.Thread(target=doJob,args=(jobs, workers, signals, port, stage, num_tasks))
+                                jobThread = threading.Thread(target=doJob, args=(
+                                    jobs, workers, signals, port, stage, num_tasks))
                                 threads.append(jobThread)
                                 jobThread.start()
                                 stage = "mapping"
@@ -181,14 +190,18 @@ class Manager:
                 if message_dict['message_type'] == "shutdown":
                     for worker in workers:
                         if worker['status'] != "dead":
-                            mapreduce.utils.sendMessage(worker['port'], worker['host'], {"message_type" : "shutdown"})
+                            mapreduce.utils.sendMessage(worker['port'], worker['host'], {
+                                                        "message_type": "shutdown"})
                     signals["shutdown"] = True
-                LOGGER.debug("TCP recv\n%s", json.dumps(message_dict, indent=2))
+                LOGGER.debug("TCP recv\n%s", json.dumps(
+                    message_dict, indent=2))
                 time.sleep(.1)
 
         # TODO: exit all threads before moving on
 
+
 def doReduce(jobs, workers, signals, port, map_outputs, num_tasks):
+    """Handle reduce job."""
     #make array for tasks
     partitionedFiles = []
     currJob = jobs[0]
@@ -201,7 +214,7 @@ def doReduce(jobs, workers, signals, port, map_outputs, num_tasks):
     i = 0
     for task in map_outputs:
         partitionedFiles[i].append({'task': task,
-                                 'taskid': i})
+                                    'taskid': i})
         if i not in num_tasks:
             num_tasks.append(i)
         i += 1
@@ -216,23 +229,28 @@ def doReduce(jobs, workers, signals, port, map_outputs, num_tasks):
                     for path in partitionedFiles[i]:
                         input_paths.append(path['task'])
                     message_dict = {
-                                    "message_type": "new_reduce_task",
-                                    "task_id": partitionedFiles[i][0]['taskid'],
-                                    "executable": currJob['reducer_executable'],
-                                    "input_paths": input_paths,
-                                    "output_directory": str(currJob['output_directory_reduce']),
-                                    "worker_host": worker['host'],
-                                    "worker_port": worker['port']
-                                    }
-                    mapreduce.utils.sendMessage(worker['port'], worker['host'], message_dict)
+                        "message_type": "new_reduce_task",
+                        "task_id": partitionedFiles[i][0]['taskid'],
+                        "executable": currJob['reducer_executable'],
+                        "input_paths": input_paths,
+                        "output_directory": str(currJob['output_directory_reduce']),
+                        "worker_host": worker['host'],
+                        "worker_port": worker['port']
+                    }
+                    mapreduce.utils.sendMessage(
+                        worker['port'], worker['host'], message_dict)
                     worker['status'] = "busy"
                     partitionedFiles.pop(i)
         time.sleep(.1)
 
+
 def doPartition(jobs):
+    """Old function, may need to delete."""
     pass
 
+
 def doJob(jobs, workers, signals, port, stage, num_tasks):
+    """Do a job."""
     currJob = jobs[0]
     #print("num of partitions: " + str(currJob['num_mappers']))
     tasks = []
@@ -245,7 +263,7 @@ def doJob(jobs, workers, signals, port, stage, num_tasks):
     i = 0
     for task in tasks:
         partitionedFiles[i].append({'task': str(task),
-                                 'taskid': i})
+                                    'taskid': i})
         if i not in num_tasks:
             num_tasks.append(i)
         i += 1
@@ -258,19 +276,21 @@ def doJob(jobs, workers, signals, port, stage, num_tasks):
                 if worker['status'] == "ready":
                     input_paths = []
                     for path in partitionedFiles[i]:
-                        input_paths.append(currJob['input_directory']+"/"+path['task'])
+                        input_paths.append(
+                            currJob['input_directory']+"/"+path['task'])
                     message_dict = {
-                                    "message_type": "new_map_task",
-                                    "task_id": partitionedFiles[i][0]['taskid'],
-                                    "input_paths": input_paths,
-                                    "executable": currJob['mapper_executable'],
-                                    "output_directory": str(currJob['output_directory_map']),
-                                    "num_partitions": currJob['num_reducers'],
-                                    "worker_host": worker['host'],
-                                    "worker_port": worker['port']
-                                    }
+                        "message_type": "new_map_task",
+                        "task_id": partitionedFiles[i][0]['taskid'],
+                        "input_paths": input_paths,
+                        "executable": currJob['mapper_executable'],
+                        "output_directory": str(currJob['output_directory_map']),
+                        "num_partitions": currJob['num_reducers'],
+                        "worker_host": worker['host'],
+                        "worker_port": worker['port']
+                    }
                     worker['message'] = message_dict
-                    mapreduce.utils.sendMessage(worker['port'], worker['host'], message_dict)
+                    mapreduce.utils.sendMessage(
+                        worker['port'], worker['host'], message_dict)
                     worker['status'] = "busy"
                     print("pop index: " + str(i))
                     partitionedFiles.pop(i)
@@ -279,19 +299,24 @@ def doJob(jobs, workers, signals, port, stage, num_tasks):
             i += 1
         time.sleep(.1)
     LOGGER.info("Manager:%s begin map stage", port)
-    
+
+
 def send_replacementTask(signals, message, workers):
+    """Send a replacement task."""
     while not signals['shutdown']:
         for worker in workers:
             if worker['status'] == "ready":
                 message['worker_port'] = worker['port']
                 worker['message'] = message
-                mapreduce.utils.sendMessage(worker['port'], worker['host'], message)
+                mapreduce.utils.sendMessage(
+                    worker['port'], worker['host'], message)
                 worker['status'] = "busy"
                 return
         time.sleep(.1)
-            
+
+
 def check_heartbeats(signals, workers):
+    """Check for heartbeats."""
     while not signals["shutdown"]:
         for worker in workers:
             if worker['missedHB'] >= 5:
@@ -299,17 +324,20 @@ def check_heartbeats(signals, workers):
                     LOGGER.debug("worker: " + str(worker['port']) + "is dead")
                     if worker['status'] == "busy":
                         worker['status'] = "dead"
-                        newTaskThread = threading.Thread(target=send_replacementTask, args=(signals,worker['message'],workers))
+                        newTaskThread = threading.Thread(
+                            target=send_replacementTask, args=(signals, worker['message'], workers))
                         newTaskThread.start()
                     worker['status'] = "dead"
 
             worker['missedHB'] += 1
         time.sleep(2)
 
+
 def heartbeatListener(signals, host, hb_port, workers):
-       # Create an INET, DGRAM socket, this is UDP
+    """Listen for Heart Beat."""
+    # Create an INET, DGRAM socket, this is UDP
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        # Bind the UDP socket to the server 
+        # Bind the UDP socket to the server
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((host, hb_port))
         sock.settimeout(1)
@@ -322,18 +350,21 @@ def heartbeatListener(signals, host, hb_port, workers):
                 continue
             message_str = message_bytes.decode("utf-8")
             message_dict = json.loads(message_str)
-            LOGGER.debug("%s",message_dict)
+            LOGGER.debug("%s", message_dict)
             if message_dict["message_type"] == "heartbeat":
                 LOGGER.debug("recieving heartbeat")
                 for worker in workers:
                     if worker['port'] == message_dict['worker_port']:
                         worker['missedHB'] = 0
 
-    
+
 @click.command()
-@click.option("--host", "host", default="localhost") # host address to listen for addresses
-@click.option("--port", "port", default=6000) # tcp port to listen for messages
-@click.option("--hb-port", "hb_port", default=5999) #udp port to listen for heartbeats
+# host address to listen for addresses
+@click.option("--host", "host", default="localhost")
+# tcp port to listen for messages
+@click.option("--port", "port", default=6000)
+# udp port to listen for heartbeats
+@click.option("--hb-port", "hb_port", default=5999)
 def main(host, port, hb_port):
     """Run Manager."""
     handler = logging.StreamHandler(sys.stdout)

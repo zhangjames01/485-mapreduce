@@ -20,12 +20,13 @@ LOGGER = logging.getLogger(__name__)
 
 class Worker:
     """A class representing a worker node in a MapReduce cluster."""
+
     def __init__(self, host, port, manager_host, manager_port,
                  manager_hb_port):
         """Construct a Worker instance and start listening for messages."""
         threads = []
 
-        signals = {"shutdown" : False}
+        signals = {"shutdown": False}
 
         LOGGER.info(
             "Starting worker host=%s port=%s pwd=%s",
@@ -42,12 +43,13 @@ class Worker:
                 "worker_host": host,
                 "worker_port": port,
             }
-            mapreduce.utils.sendMessage(manager_port, manager_host, register_mess)
+            mapreduce.utils.sendMessage(
+                manager_port, manager_host, register_mess)
             LOGGER.debug("TCP recv\n%s", json.dumps(register_mess, indent=2))
             sock.settimeout(1)
             while not signals["shutdown"]:
-            # Wait for a connection for 1s.  The socket library avoids consuming
-            # CPU while waiting for a connection.
+                # Wait for a connection for 1s.  The socket library avoids consuming
+                # CPU while waiting for a connection.
                 try:
                     clientsocket, address = sock.accept()
                 except socket.timeout:
@@ -76,16 +78,19 @@ class Worker:
                     continue
                 if message_dict['message_type'] == "register_ack":
                     LOGGER.debug("recieved register_ack")
-                    newthread = threading.Thread(target=sendHeartBeat, args=(signals, manager_host, manager_hb_port, host, port))
+                    newthread = threading.Thread(target=sendHeartBeat, args=(
+                        signals, manager_host, manager_hb_port, host, port))
                     threads.append(newthread)
                     newthread.start()
                 if message_dict['message_type'] == "new_map_task":
                     print("recieved map task")
                     output_paths = []
                     for i in range(message_dict['num_partitions']):
-                        output_paths.append(message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(i))
+                        output_paths.append(message_dict['output_directory'] + "/maptask{0:05}".format(
+                            message_dict['task_id']) + "-part{0:05}".format(i))
                     with contextlib.ExitStack() as stack:
-                        files = [stack.enter_context(open(fn, 'a')) for fn in output_paths]  
+                        files = [stack.enter_context(
+                            open(fn, 'a')) for fn in output_paths]
                         for input_path in message_dict['input_paths']:
                             with open(input_path) as infile:
                                 with subprocess.Popen(
@@ -96,25 +101,29 @@ class Worker:
                                 ) as map_process:
                                     for line in map_process.stdout:
                                         #TODO: add the line to the correct partition file
-                                    
+
                                         key = line.split("\t")[0]
-                                        hexdigest = hashlib.md5(key.encode("utf-8")).hexdigest()
+                                        hexdigest = hashlib.md5(
+                                            key.encode("utf-8")).hexdigest()
                                         keyhash = int(hexdigest, base=16)
                                         partition = keyhash % message_dict['num_partitions']
-                                        output_file = message_dict['output_directory'] +"/maptask{0:05}".format(message_dict['task_id']) + "-part{0:05}".format(partition)
+                                        output_file = message_dict['output_directory'] + "/maptask{0:05}".format(
+                                            message_dict['task_id']) + "-part{0:05}".format(partition)
                                         for file in files:
                                             #LOGGER.debug("file name: %s  output_file: %s", file.name, output_file)
                                             if file.name == output_file:
-                                                LOGGER.debug("write %s to %s", line, output_file)
+                                                LOGGER.debug(
+                                                    "write %s to %s", line, output_file)
                                                 file.write(line)
                     message_finished = {
-                                        "message_type": "finished",
+                        "message_type": "finished",
                                         "task_id": message_dict['task_id'],
-                                        "output_paths" : output_paths,
+                                        "output_paths": output_paths,
                                         "worker_host": host,
                                         "worker_port": port
-                                        }
-                    mapreduce.utils.sendMessage(manager_port, manager_host, message_finished)
+                    }
+                    mapreduce.utils.sendMessage(
+                        manager_port, manager_host, message_finished)
                 if message_dict['message_type'] == "new_reduce_task":
                     output_paths = []
                     inFiles = []
@@ -127,8 +136,10 @@ class Worker:
                             inFiles.append(input_path)
 
                     executable = message_dict['executable']
-                    pathlib.Path(message_dict['output_directory']).mkdir(parents=True, exist_ok=True)
-                    output_path = message_dict['output_directory'] + "/part-{0:05}".format(message_dict['task_id'])
+                    pathlib.Path(message_dict['output_directory']).mkdir(
+                        parents=True, exist_ok=True)
+                    output_path = message_dict['output_directory'] + \
+                        "/part-{0:05}".format(message_dict['task_id'])
                     with open(output_path, 'w+') as outfile:
                         with subprocess.Popen(
                             [executable],
@@ -138,37 +149,41 @@ class Worker:
                         ) as reduce_process:
                             # Pipe input to reduce_process
                             with contextlib.ExitStack() as stack:
-                                files = [stack.enter_context(open(fn)) for fn in inFiles]           
+                                files = [stack.enter_context(
+                                    open(fn)) for fn in inFiles]
                                 for line in (heapq.merge(*files)):
                                     reduce_process.stdin.write(line)
                                 # Add line to correct partition output file
                         output_paths.append(outfile.name)
                     message_finished_red = {
-                                        "message_type": "finished",
+                        "message_type": "finished",
                                         "task_id": message_dict['task_id'],
-                                        "output_paths" : output_paths,
+                                        "output_paths": output_paths,
                                         "worker_host": host,
                                         "worker_port": port
-                                        }
-                    mapreduce.utils.sendMessage(manager_port, manager_host, message_finished_red)
+                    }
+                    mapreduce.utils.sendMessage(
+                        manager_port, manager_host, message_finished_red)
                 if message_dict['message_type'] == "shutdown":
                     signals["shutdown"] = True
-                # send register message to 
-                                        
+                # send register message to
+
 
 def sendHeartBeat(signals, manager_host, manager_hb_port, host, port, timer=2):
+    """Send Heart Beat."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.connect((manager_host, manager_hb_port))
         hb_message = {
-                     "message_type": "heartbeat",
-                     "worker_host": host,
-                     "worker_port": port
-                    }
+            "message_type": "heartbeat",
+            "worker_host": host,
+            "worker_port": port
+        }
         while not signals["shutdown"]:
             LOGGER.debug("sending heartbeat")
             message = json.dumps(hb_message)
             sock.sendall(message.encode('utf-8'))
             time.sleep(timer)
+
 
 @click.command()
 @click.option("--host", "host", default="localhost")
